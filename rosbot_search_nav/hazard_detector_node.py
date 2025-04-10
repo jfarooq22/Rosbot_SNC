@@ -3,6 +3,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import PointStamped
+from visualization_msgs.msg import Marker
 import tf2_ros
 import math
 
@@ -13,9 +14,9 @@ class ObjectLoggerFromArray(Node):
         self.create_subscription(Float32MultiArray, '/objects', self.object_callback, 10)
         self.create_subscription(LaserScan, '/scan', self.laser_callback, 10)
 
-        self.laser_data = None
+        self.marker_pub = self.create_publisher(Marker, '/hazards', 10)
 
-        # TF2 listener setup
+        self.laser_data = None
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
@@ -60,20 +61,40 @@ class ObjectLoggerFromArray(Node):
 
         self.get_logger().info(f"📏 Distance to object: {distance:.2f} meters")
 
-        # Create the point in the robot's frame
+        # Point in robot frame
         point = PointStamped()
         point.header.stamp = self.get_clock().now().to_msg()
-        point.header.frame_id = self.laser_data.header.frame_id  # usually 'laser'
+        point.header.frame_id = self.laser_data.header.frame_id
         point.point.x = distance
         point.point.y = 0.0
         point.point.z = 0.0
 
-        # 🔁 Try to transform to map frame
         try:
             point_in_map = self.tf_buffer.transform(point, 'map', timeout=rclpy.duration.Duration(seconds=1.0))
             x = point_in_map.point.x
             y = point_in_map.point.y
-            self.get_logger().info(f"🗺️ Object in map frame: x={x:.2f}, y={y:.2f}")
+            self.get_logger().info(f"🗺️ Object in map frame: x={x:.2f}, y={y:.2f} (Label: {label})")
+
+            # 🔴 Create and publish marker
+            marker = Marker()
+            marker.header.frame_id = "map"
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = "hazards"
+            marker.id = object_id  # Use object ID as marker ID
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+            marker.pose.position = point_in_map.point
+            marker.pose.orientation.w = 1.0
+            marker.scale.x = 0.2
+            marker.scale.y = 0.2
+            marker.scale.z = 0.2
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+
+            self.marker_pub.publish(marker)
+            self.get_logger().info(f"📍 Marker published for {label} (ID: {object_id})")
 
         except Exception as e:
             self.get_logger().warn(f"⚠️ TF transform failed: {e}")
