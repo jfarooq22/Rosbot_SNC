@@ -2,27 +2,22 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import PointStamped
+import tf2_ros
 import math
 
 class ObjectLoggerFromArray(Node):
     def __init__(self):
         super().__init__('object_logger_from_array')
 
-        self.create_subscription(
-            Float32MultiArray,
-            '/objects',
-            self.object_callback,
-            10
-        )
+        self.create_subscription(Float32MultiArray, '/objects', self.object_callback, 10)
+        self.create_subscription(LaserScan, '/scan', self.laser_callback, 10)
 
-        self.create_subscription(
-            LaserScan,
-            '/scan',
-            self.laser_callback,
-            10
-        )
+        self.laser_data = None
 
-        self.laser_data = None  # stores latest laser scan
+        # TF2 listener setup
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         self.id_to_label = {
             0: "Unknown",
@@ -41,7 +36,7 @@ class ObjectLoggerFromArray(Node):
         }
 
     def laser_callback(self, msg):
-        self.laser_data = msg  # store latest scan
+        self.laser_data = msg
 
     def object_callback(self, msg):
         if len(msg.data) < 1:
@@ -63,7 +58,25 @@ class ObjectLoggerFromArray(Node):
             self.get_logger().warn("❌ Invalid laser distance (inf or nan).")
             return
 
-        self.get_logger().info(f"📏 Estimated distance to object: {distance:.2f} meters")
+        self.get_logger().info(f"📏 Distance to object: {distance:.2f} meters")
+
+        # Create the point in the robot's frame
+        point = PointStamped()
+        point.header.stamp = self.get_clock().now().to_msg()
+        point.header.frame_id = self.laser_data.header.frame_id  # usually 'laser'
+        point.point.x = distance
+        point.point.y = 0.0
+        point.point.z = 0.0
+
+        # 🔁 Try to transform to map frame
+        try:
+            point_in_map = self.tf_buffer.transform(point, 'map', timeout=rclpy.duration.Duration(seconds=1.0))
+            x = point_in_map.point.x
+            y = point_in_map.point.y
+            self.get_logger().info(f"🗺️ Object in map frame: x={x:.2f}, y={y:.2f}")
+
+        except Exception as e:
+            self.get_logger().warn(f"⚠️ TF transform failed: {e}")
 
 def main(args=None):
     rclpy.init(args=args)
