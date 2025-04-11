@@ -17,42 +17,61 @@ class NavigationNode(Node):
         # Filter valid (non-zero, non-infinite) distances
         def valid_ranges(range_list):
             return [r for r in range_list if r > 0.0 and r < float('inf')]
-        # Front: approx -20° to +20° (wraps from 250°–270° + 0°–20°)
-        front_indices = list(range(angle_to_index(0), angle_to_index(20))) + list(range(angle_to_index(250), num_ranges))
+        
+        front_indices = list(range(angle_to_index(0), angle_to_index(45))) + \
+                        list(range(angle_to_index(225), num_ranges))
+        # Front: approx -45° to +45°
         front = min(valid_ranges([msg.ranges[i] for i in front_indices]), default=3.0)
-        # Right: approx 250°–270°
-        right_indices = range(angle_to_index(250), num_ranges)
-        right = min(valid_ranges([msg.ranges[i] for i in right_indices]), default=1.0)
+
+         # Right: ~90°
+        right_indices = range(angle_to_index(85), angle_to_index(95))
+        right = min(valid_ranges([msg.ranges[i] for i in right_indices]), default=3.0)
+
+        # Diagonal Right: 30°–60°
+        diag_right_indices = range(angle_to_index(30), angle_to_index(60))
+        diag_right = min(valid_ranges([msg.ranges[i] for i in diag_right_indices]), default=3.0)
+
         # Left: approx 80°–100°
-        left_indices = range(angle_to_index(80), angle_to_index(100))
+        left_indices = range(angle_to_index(-85), angle_to_index(-95))
         left = min(valid_ranges([msg.ranges[i] for i in left_indices]), default=1.0)
+        
         twist = Twist()
-        # :octagonal_sign: Emergency case — too close to wall
-        if right < 0.2:
+
+        if front < 0.8:
+            twist.linear.x = 0.0
+            twist.angular.z = 0.5
+            self.get_logger().warn("Obstacle ahead! Turning left")
+
+        # Diagonal wall blocks a right turn — skip it
+        elif right > 1.0 and diag_right < 0.5:
+            twist.linear.x = 0.0
+            twist.angular.z = 0.6
+            self.get_logger().warn("Diagonal wall blocks right turn — turning left")
+
+        # Too close to right wall
+        elif right < 1.0:
             twist.linear.x = 0.0
             twist.angular.z = 0.8
-            self.get_logger().warn("Too close to wall! Emergency turn")
-        # :no_entry: Obstacle in front
-        elif front < 0.4:
-            twist.linear.x = 0.0
-            twist.angular.z = 0.5
-        # :leftwards_arrow_with_hook: No wall on the right
-        elif right > 0.7:
+            self.get_logger().warn("Too close to right wall — turning left")
+
+        # Wall too far — gently curve right
+        elif right > 1.0:
             twist.linear.x = 0.15
-            twist.angular.z = -0.3
-        # :arrow_right_hook: Too close to wall on right
-        elif right < 0.5:
-            twist.linear.x = 0.15
-            twist.angular.z = 0.5
-        # :white_tick: Ideal distance from wall
+            twist.angular.z = -0.1
+
+        # ✅ Good distance from wall — go straight
         else:
             twist.linear.x = 0.2
             twist.angular.z = 0.0
+
+
         self.cmd_pub.publish(twist)
         # Debug info
         self.get_logger().info(
-            f"[Ranges] Right: {right:.2f} | Front: {front:.2f} | Left: {left:.2f} → Cmd: Lin {twist.linear.x:.2f}, Ang {twist.angular.z:.2f}"
+            f"[Ranges] Right: {right:.2f} | Diag→: {diag_right:.2f} | Front: {front:.2f} → Cmd: Lin {twist.linear.x:.2f}, Ang {twist.angular.z:.2f}"
         )
+
+        
 def main(args=None):
     rclpy.init(args=args)
     node = NavigationNode()
