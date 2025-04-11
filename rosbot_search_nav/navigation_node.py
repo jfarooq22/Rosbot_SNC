@@ -18,18 +18,18 @@ class NavigationNode(Node):
         def valid_ranges(range_list):
             return [r for r in range_list if r > 0.0 and r < float('inf')]
         
-        front_indices = list(range(angle_to_index(0), angle_to_index(45))) + \
-                        list(range(angle_to_index(225), num_ranges))
+        front_indices = list(range(angle_to_index(0), angle_to_index(30))) + \
+                        list(range(angle_to_index(240), num_ranges))
         # Front: approx -45° to +45°
         front = min(valid_ranges([msg.ranges[i] for i in front_indices]), default=3.0)
 
          # Right: ~90°
-        right_indices = range(angle_to_index(85), angle_to_index(95))
+        right_indices = range(angle_to_index(90), angle_to_index(100))
         right = min(valid_ranges([msg.ranges[i] for i in right_indices]), default=3.0)
 
-        # Diagonal Right: 30°–60°
-        diag_right_indices = range(angle_to_index(30), angle_to_index(60))
-        diag_right = min(valid_ranges([msg.ranges[i] for i in diag_right_indices]), default=3.0)
+        # # Diagonal Right: 30°–60°
+        # diag_right_indices = range(angle_to_index(30), angle_to_index(60))
+        # diag_right = min(valid_ranges([msg.ranges[i] for i in diag_right_indices]), default=3.0)
 
         # Left: approx 80°–100°
         left_indices = range(angle_to_index(-85), angle_to_index(-95))
@@ -37,38 +37,40 @@ class NavigationNode(Node):
         
         twist = Twist()
 
-        if front < 0.8:
+        if front < 0.4:
             twist.linear.x = 0.0
             twist.angular.z = 0.5
             self.get_logger().warn("Obstacle ahead! Turning left")
 
-        # Diagonal wall blocks a right turn — skip it
-        elif right > 1.0 and diag_right < 0.5:
-            twist.linear.x = 0.0
-            twist.angular.z = 0.6
-            self.get_logger().warn("Diagonal wall blocks right turn — turning left")
+        # # Diagonal wall blocks a right turn — skip it
+        # elif right > 1.0 and diag_right < 0.5:
+        #     twist.linear.x = 0.0
+        #     twist.angular.z = 0.6
+        #     self.get_logger().warn("Diagonal wall blocks right turn — turning left")
 
         # Too close to right wall
-        elif right < 1.0:
+        elif right < 0.6:
             twist.linear.x = 0.0
             twist.angular.z = 0.8
             self.get_logger().warn("Too close to right wall — turning left")
 
         # Wall too far — gently curve right
-        elif right > 1.0:
+        elif right > 0.8:
             twist.linear.x = 0.15
             twist.angular.z = -0.1
+            self.get_logger().warn("Too far from right wall — turning right a bit")
 
         # ✅ Good distance from wall — go straight
         else:
             twist.linear.x = 0.2
             twist.angular.z = 0.0
+            self.get_logger().warn("Good distance from wall - going straight")
 
 
         self.cmd_pub.publish(twist)
         # Debug info
         self.get_logger().info(
-            f"[Ranges] Right: {right:.2f} | Diag→: {diag_right:.2f} | Front: {front:.2f} → Cmd: Lin {twist.linear.x:.2f}, Ang {twist.angular.z:.2f}"
+            f"[Ranges] Right: {right:.2f} | Front: {front:.2f} → Cmd: Lin {twist.linear.x:.2f}, Ang {twist.angular.z:.2f}"
         )
 
         
